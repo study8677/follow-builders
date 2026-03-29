@@ -1,0 +1,43 @@
+name: Daily Digest
+
+on:
+  schedule:
+    # 10:00 AM Beijing time (UTC+8) = 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      language:
+        description: 'Digest language'
+        required: false
+        default: 'zh'
+        type: choice
+        options:
+          - zh
+          - en
+          - bilingual
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: cd scripts && npm install
+
+      - name: Generate and deliver digest
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          LANG_FLAG="--language zh"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            LANG_FLAG="--language ${{ inputs.language }}"
+          fi
+          cd scripts && node daily-digest.js $LANG_FLAG
