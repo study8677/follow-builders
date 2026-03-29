@@ -3,20 +3,19 @@
 // ============================================================================
 // Follow Builders — Daily Digest (GitHub Actions)
 // ============================================================================
-// Fully automated pipeline: fetch feeds → Gemini remix → Gmail delivery.
-// Runs on GitHub Actions daily. Zero cost (free Gemini API + Gmail SMTP).
+// Fully automated pipeline: fetch feeds → Gemini remix → Resend email.
+// Runs on GitHub Actions daily. Zero cost (free Gemini API + free Resend).
 //
 // Required env vars:
-//   GEMINI_API_KEY    — Google AI Studio API key
-//   GMAIL_ADDRESS     — Gmail address (sender and recipient)
-//   GMAIL_APP_PASSWORD — Gmail App Password (16-char, from Google Account)
+//   GEMINI_API_KEY  — Google AI Studio API key
+//   RESEND_API_KEY  — Resend API key (free tier: 100 emails/day)
+//   DIGEST_EMAIL    — Recipient email address
 //
 // Usage: node daily-digest.js [--language en|zh|bilingual]
 // ============================================================================
 
 import { readFile } from 'fs/promises';
 import { join } from 'path';
-import { createTransport } from 'nodemailer';
 
 const SCRIPT_DIR = decodeURIComponent(new URL('.', import.meta.url).pathname);
 const ROOT = join(SCRIPT_DIR, '..');
@@ -32,7 +31,8 @@ const FEED_URLS = {
 // -- Gemini API --------------------------------------------------------------
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_MODEL = 'gemini-2.0-flash';
+// Try models in order: primary → fallbacks (separate quotas)
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash-lite'];
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -75,59 +75,80 @@ async function loadPrompts() {
 // -- Step 3: Call Gemini API -------------------------------------------------
 
 async function callGemini(prompt, apiKey) {
-  const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        maxOutputTokens: 8192,
-        temperature: 0.7,
-      },
-    }),
-  });
+  // Try each model until one succeeds (they have independent quotas)
+  for (const model of GEMINI_MODELS) {
+    const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: 8192,
+          temperature: 0.7,
+        },
+      }),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text) {
+        console.error(`Using model: ${model}`);
+        return text;
+      }
+    }
+
+    if (res.status === 429) {
+      console.error(`${model} rate limited, trying next model...`);
+      continue;
+    }
+
     const err = await res.text();
-    throw new Error(`Gemini API error: HTTP ${res.status} — ${err}`);
+    throw new Error(`Gemini API error (${model}): HTTP ${res.status} — ${err}`);
   }
 
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  throw new Error('All Gemini models rate limited. Free tier daily quota exhausted.');
 }
 
-// -- Step 4: Send email via Gmail SMTP ---------------------------------------
+// -- Step 4: Send email via Resend -------------------------------------------
 
-async function sendEmail(digest, gmailAddress, appPassword) {
-  const transporter = createTransport({
-    service: 'gmail',
-    auth: { user: gmailAddress, pass: appPassword },
-  });
-
+async function sendEmail(digest, apiKey, toEmail) {
   const today = new Date().toLocaleDateString('zh-CN', {
     year: 'numeric', month: 'long', day: 'numeric',
     timeZone: 'Asia/Shanghai',
   });
 
-  await transporter.sendMail({
-    from: `AI Builders Digest <${gmailAddress}>`,
-    to: gmailAddress,
-    subject: `AI Builders Digest — ${today}`,
-    text: digest,
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      from: 'AI Builders Digest <onboarding@resend.dev>',
+      to: [toEmail],
+      subject: `AI Builders Digest — ${today}`,
+      text: digest,
+    }),
   });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Resend API error: ${err.message || res.status}`);
+  }
 }
 
 // -- Main --------------------------------------------------------------------
 
 async function main() {
   const geminiKey = process.env.GEMINI_API_KEY;
-  const gmailAddress = process.env.GMAIL_ADDRESS;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  const resendKey = process.env.RESEND_API_KEY;
+  const digestEmail = process.env.DIGEST_EMAIL;
 
   if (!geminiKey) { console.error('GEMINI_API_KEY not set'); process.exit(1); }
-  if (!gmailAddress) { console.error('GMAIL_ADDRESS not set'); process.exit(1); }
-  if (!gmailAppPassword) { console.error('GMAIL_APP_PASSWORD not set'); process.exit(1); }
+  if (!resendKey) { console.error('RESEND_API_KEY not set'); process.exit(1); }
+  if (!digestEmail) { console.error('DIGEST_EMAIL not set'); process.exit(1); }
 
   // Parse language from CLI args (default: zh)
   const args = process.argv.slice(2);
@@ -213,8 +234,8 @@ Generate the complete digest now. Rules:
   console.error(`Digest generated: ${digest.length} chars`);
 
   // 5. Send email
-  console.error(`Sending to ${gmailAddress}...`);
-  await sendEmail(digest, gmailAddress, gmailAppPassword);
+  console.error(`Sending to ${digestEmail}...`);
+  await sendEmail(digest, resendKey, digestEmail);
   console.error('Done! Digest delivered.');
 
   // Also print digest to stdout (visible in GitHub Actions logs)

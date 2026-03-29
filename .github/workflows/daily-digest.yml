@@ -33,8 +33,8 @@ jobs:
       - name: Generate and deliver digest
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_EMAIL: ${{ secrets.DIGEST_EMAIL }}
         run: |
           LANG_FLAG="--language zh"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
