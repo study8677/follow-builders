@@ -74,29 +74,39 @@ async function loadPrompts() {
 // -- Step 3: Call NVIDIA API (Kimi K2.5) -------------------------------------
 
 async function callLLM(prompt, apiKey) {
-  const res = await fetch(NVIDIA_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: NVIDIA_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 16384,
-      temperature: 0.7,
-      top_p: 1.0,
-      stream: false,
-    }),
-  });
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const res = await fetch(NVIDIA_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: NVIDIA_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 16384,
+        temperature: 0.7,
+        top_p: 1.0,
+        stream: false,
+      }),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || '';
+    }
+
+    if (res.status === 429 && attempt < maxRetries) {
+      const wait = attempt * 30;
+      console.error(`Rate limited (429), retrying in ${wait}s... (attempt ${attempt}/${maxRetries})`);
+      await new Promise(r => setTimeout(r, wait * 1000));
+      continue;
+    }
+
     const err = await res.text();
     throw new Error(`NVIDIA API error: HTTP ${res.status} — ${err}`);
   }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 // -- Step 4: Send email via Resend -------------------------------------------
