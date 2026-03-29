@@ -3,11 +3,11 @@
 // ============================================================================
 // Follow Builders — Daily Digest (GitHub Actions)
 // ============================================================================
-// Fully automated pipeline: fetch feeds → Gemini remix → Resend email.
-// Runs on GitHub Actions daily. Zero cost (free Gemini API + free Resend).
+// Fully automated pipeline: fetch feeds → LLM remix → Resend email.
+// Runs on GitHub Actions daily.
 //
 // Required env vars:
-//   GEMINI_API_KEY  — Google AI Studio API key
+//   NVIDIA_API_KEY  — NVIDIA API key (for Kimi K2.5 via NVIDIA Inference)
 //   RESEND_API_KEY  — Resend API key (free tier: 100 emails/day)
 //   DIGEST_EMAIL    — Recipient email address
 //
@@ -28,11 +28,10 @@ const FEED_URLS = {
   blogs: 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json',
 };
 
-// -- Gemini API --------------------------------------------------------------
+// -- NVIDIA API (OpenAI-compatible) ------------------------------------------
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-// Try models in order: primary → fallbacks (separate quotas)
-const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash-lite'];
+const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const NVIDIA_MODEL = 'moonshotai/kimi-k2.5';
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -72,43 +71,32 @@ async function loadPrompts() {
   return prompts;
 }
 
-// -- Step 3: Call Gemini API -------------------------------------------------
+// -- Step 3: Call NVIDIA API (Kimi K2.5) -------------------------------------
 
-async function callGemini(prompt, apiKey) {
-  // Try each model until one succeeds (they have independent quotas)
-  for (const model of GEMINI_MODELS) {
-    const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 8192,
-          temperature: 0.7,
-        },
-      }),
-    });
+async function callLLM(prompt, apiKey) {
+  const res = await fetch(NVIDIA_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: NVIDIA_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 16384,
+      temperature: 0.7,
+      top_p: 1.0,
+      stream: false,
+    }),
+  });
 
-    if (res.ok) {
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (text) {
-        console.error(`Using model: ${model}`);
-        return text;
-      }
-    }
-
-    if (res.status === 429) {
-      console.error(`${model} rate limited, trying next model...`);
-      continue;
-    }
-
+  if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Gemini API error (${model}): HTTP ${res.status} — ${err}`);
+    throw new Error(`NVIDIA API error: HTTP ${res.status} — ${err}`);
   }
 
-  throw new Error('All Gemini models rate limited. Free tier daily quota exhausted.');
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
 // -- Step 4: Send email via Resend -------------------------------------------
@@ -142,11 +130,11 @@ async function sendEmail(digest, apiKey, toEmail) {
 // -- Main --------------------------------------------------------------------
 
 async function main() {
-  const geminiKey = process.env.GEMINI_API_KEY;
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
   const digestEmail = process.env.DIGEST_EMAIL;
 
-  if (!geminiKey) { console.error('GEMINI_API_KEY not set'); process.exit(1); }
+  if (!nvidiaKey) { console.error('NVIDIA_API_KEY not set'); process.exit(1); }
   if (!resendKey) { console.error('RESEND_API_KEY not set'); process.exit(1); }
   if (!digestEmail) { console.error('DIGEST_EMAIL not set'); process.exit(1); }
 
@@ -186,14 +174,14 @@ async function main() {
     })),
   };
 
-  // 4. Build Gemini prompt
+  // 4. Build LLM prompt
   const languageInstructions = {
     en: 'Language: en (English). Write the entire digest in English.',
     zh: 'Language: zh (Chinese). Translate the entire digest to Chinese following the translation instructions.',
     bilingual: 'Language: bilingual. Interleave English and Chinese paragraph by paragraph following the translation instructions.',
   };
 
-  const geminiPrompt = `You are an AI content curator. Generate a daily digest following these instructions.
+  const llmPrompt = `You are an AI content curator. Generate a daily digest following these instructions.
 
 ## Digest Format Instructions
 ${prompts.digest_intro}
@@ -222,12 +210,12 @@ Generate the complete digest now. Rules:
 - Section order: X/Twitter → Official Blogs → Podcasts.
 - Skip sections with no content.`;
 
-  console.error(`Prompt size: ${geminiPrompt.length} chars`);
-  console.error('Calling Gemini API...');
-  const digest = await callGemini(geminiPrompt, geminiKey);
+  console.error(`Prompt size: ${llmPrompt.length} chars`);
+  console.error(`Calling ${NVIDIA_MODEL} via NVIDIA API...`);
+  const digest = await callLLM(llmPrompt, nvidiaKey);
 
   if (!digest) {
-    console.error('Gemini returned empty response');
+    console.error('LLM returned empty response');
     process.exit(1);
   }
 
