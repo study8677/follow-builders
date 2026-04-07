@@ -14,8 +14,10 @@
 // Usage: node daily-digest.js [--language en|zh|bilingual]
 // ============================================================================
 
-import { readFile } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
+
+import { formatError, requestJsonWithRetry } from './lib/http-client.js';
 
 const SCRIPT_DIR = decodeURIComponent(new URL('.', import.meta.url).pathname);
 const ROOT = join(SCRIPT_DIR, '..');
@@ -74,39 +76,27 @@ async function loadPrompts() {
 // -- Step 3: Call NVIDIA API (Kimi K2.5) -------------------------------------
 
 async function callLLM(prompt, apiKey) {
-  const maxRetries = 3;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const res = await fetch(NVIDIA_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: NVIDIA_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 16384,
-        temperature: 0.7,
-        top_p: 1.0,
-        stream: false,
-      }),
-    });
+  const data = await requestJsonWithRetry(NVIDIA_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: NVIDIA_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 16384,
+      temperature: 0.7,
+      top_p: 1.0,
+      stream: false,
+    }),
+    timeoutMs: 10 * 60 * 1000,
+    maxAttempts: 3,
+    backoffMs: 30 * 1000,
+    label: 'NVIDIA API request',
+  });
 
-    if (res.ok) {
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content || '';
-    }
-
-    if (res.status === 429 && attempt < maxRetries) {
-      const wait = attempt * 30;
-      console.error(`Rate limited (429), retrying in ${wait}s... (attempt ${attempt}/${maxRetries})`);
-      await new Promise(r => setTimeout(r, wait * 1000));
-      continue;
-    }
-
-    const err = await res.text();
-    throw new Error(`NVIDIA API error: HTTP ${res.status} — ${err}`);
-  }
+  return data.choices?.[0]?.message?.content || '';
 }
 
 // -- Step 4: Send email via Resend -------------------------------------------
@@ -145,8 +135,6 @@ async function main() {
   const digestEmail = process.env.DIGEST_EMAIL;
 
   if (!nvidiaKey) { console.error('NVIDIA_API_KEY not set'); process.exit(1); }
-  if (!resendKey) { console.error('RESEND_API_KEY not set'); process.exit(1); }
-  if (!digestEmail) { console.error('DIGEST_EMAIL not set'); process.exit(1); }
 
   // Parse language from CLI args (default: zh)
   const args = process.argv.slice(2);
@@ -231,16 +219,29 @@ Generate the complete digest now. Rules:
 
   console.error(`Digest generated: ${digest.length} chars`);
 
-  // 5. Send email
-  console.error(`Sending to ${digestEmail}...`);
-  await sendEmail(digest, resendKey, digestEmail);
-  console.error('Done! Digest delivered.');
+  // 5. Save digest to file (for GitHub Actions to pick up as an Issue)
+  const digestPath = join(ROOT, 'digest-output.md');
+  await writeFile(digestPath, digest);
+  console.error(`Saved to ${digestPath}`);
 
-  // Also print digest to stdout (visible in GitHub Actions logs)
+  // 6. Optionally send email via Resend (skip if keys missing)
+  if (resendKey && digestEmail) {
+    console.error(`Sending email to ${digestEmail}...`);
+    try {
+      await sendEmail(digest, resendKey, digestEmail);
+      console.error('Email delivered.');
+    } catch (emailErr) {
+      console.error(`Email delivery failed: ${formatError(emailErr)} (continuing — digest saved to file)`);
+    }
+  } else {
+    console.error('RESEND_API_KEY or DIGEST_EMAIL not set — skipping email');
+  }
+
+  // Also print digest to stdout
   console.log(digest);
 }
 
 main().catch(err => {
-  console.error('Daily digest failed:', err.message);
+  console.error('Daily digest failed:', formatError(err));
   process.exit(1);
 });

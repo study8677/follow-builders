@@ -623,13 +623,21 @@ async function main() {
   const xBearerToken = process.env.X_BEARER_TOKEN;
   const supadataKey = process.env.SUPADATA_API_KEY;
 
-  if (runPodcasts && !supadataKey) {
+  // If a --*-only flag was explicitly set, the missing key is a hard error.
+  // Otherwise (default cron run), gracefully skip and let other feeds proceed.
+  if (podcastsOnly && !supadataKey) {
     console.error('SUPADATA_API_KEY not set');
     process.exit(1);
   }
-  if (runTweets && !xBearerToken) {
+  if (tweetsOnly && !xBearerToken) {
     console.error('X_BEARER_TOKEN not set');
     process.exit(1);
+  }
+  if (runPodcasts && !supadataKey) {
+    console.error('SUPADATA_API_KEY not set — skipping podcasts');
+  }
+  if (runTweets && !xBearerToken) {
+    console.error('X_BEARER_TOKEN not set — skipping tweets');
   }
 
   const sources = await loadSources();
@@ -637,7 +645,7 @@ async function main() {
   const errors = [];
 
   // Fetch tweets
-  if (runTweets) {
+  if (runTweets && xBearerToken) {
     console.error('Fetching X/Twitter content...');
     const xContent = await fetchXContent(sources.x_accounts, xBearerToken, state, errors);
     console.error(`  Found ${xContent.length} builders with new tweets`);
@@ -656,7 +664,7 @@ async function main() {
   }
 
   // Fetch podcasts
-  if (runPodcasts) {
+  if (runPodcasts && supadataKey) {
     console.error('Fetching YouTube content...');
     const podcasts = await fetchYouTubeContent(sources.podcasts, supadataKey, state, errors);
     console.error(`  Found ${podcasts.length} new episodes`);
@@ -696,6 +704,12 @@ async function main() {
 
   if (errors.length > 0) {
     console.error(`  ${errors.length} non-fatal errors`);
+  }
+
+  // Warn (but don't fail) if nothing ran at all
+  const nothingRan = (!xBearerToken || !runTweets) && (!supadataKey || !runPodcasts) && !runBlogs;
+  if (nothingRan) {
+    console.error('Warning: no feeds were generated — check your API keys');
   }
 }
 

@@ -19,6 +19,8 @@ on:
 jobs:
   digest:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: cd scripts && npm install
 
-      - name: Generate and deliver digest
+      - name: Generate digest
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -41,3 +43,15 @@ jobs:
             LANG_FLAG="--language ${{ inputs.language }}"
           fi
           cd scripts && node daily-digest.js $LANG_FLAG
+
+      - name: Create GitHub Issue from digest
+        if: hashFiles('digest-output.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TODAY=$(TZ=Asia/Shanghai date '+%Y-%m-%d')
+          gh label create digest --description "Daily AI digest" --color 0e8a16 2>/dev/null || true
+          gh issue create \
+            --title "AI Builders Digest — $TODAY" \
+            --body-file digest-output.md \
+            --label "digest"
