@@ -34,18 +34,20 @@ const FEED_URLS = {
 
 const LLM_PROVIDERS = [
   {
+    name: 'Gemini',
+    envKey: 'GEMINI_API_KEY',
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    model: 'gemini-2.5-flash',
+    maxAttempts: 4,
+    backoffMs: 60_000,
+  },
+  {
     name: 'NVIDIA (Kimi K2.5)',
     envKey: 'NVIDIA_API_KEY',
     url: 'https://integrate.api.nvidia.com/v1/chat/completions',
     model: 'moonshotai/kimi-k2.5',
-    format: 'openai',
-  },
-  {
-    name: 'Gemini',
-    envKey: 'GEMINI_API_KEY',
-    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    model: 'gemini-2.0-flash',
-    format: 'openai',
+    maxAttempts: 2,
+    backoffMs: 30_000,
   },
 ];
 
@@ -105,8 +107,8 @@ async function callLLMProvider(provider, apiKey, prompt) {
       stream: false,
     }),
     timeoutMs: 10 * 60 * 1000,
-    maxAttempts: 2,
-    backoffMs: 15 * 1000,
+    maxAttempts: provider.maxAttempts || 3,
+    backoffMs: provider.backoffMs || 30_000,
     label: provider.name,
   });
 
