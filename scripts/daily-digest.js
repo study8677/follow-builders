@@ -30,10 +30,24 @@ const FEED_URLS = {
   blogs: 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json',
 };
 
-// -- NVIDIA API (OpenAI-compatible) ------------------------------------------
+// -- LLM providers -----------------------------------------------------------
 
-const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_MODEL = 'moonshotai/kimi-k2.5';
+const LLM_PROVIDERS = [
+  {
+    name: 'NVIDIA (Kimi K2.5)',
+    envKey: 'NVIDIA_API_KEY',
+    url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    model: 'moonshotai/kimi-k2.5',
+    format: 'openai',
+  },
+  {
+    name: 'Gemini',
+    envKey: 'GEMINI_API_KEY',
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    model: 'gemini-2.0-flash',
+    format: 'openai',
+  },
+];
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -73,17 +87,17 @@ async function loadPrompts() {
   return prompts;
 }
 
-// -- Step 3: Call NVIDIA API (Kimi K2.5) -------------------------------------
+// -- Step 3: Call LLM (with provider fallback) -------------------------------
 
-async function callLLM(prompt, apiKey) {
-  const data = await requestJsonWithRetry(NVIDIA_API_URL, {
+async function callLLMProvider(provider, apiKey, prompt) {
+  const data = await requestJsonWithRetry(provider.url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: NVIDIA_MODEL,
+      model: provider.model,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 16384,
       temperature: 0.7,
@@ -91,12 +105,32 @@ async function callLLM(prompt, apiKey) {
       stream: false,
     }),
     timeoutMs: 10 * 60 * 1000,
-    maxAttempts: 3,
-    backoffMs: 30 * 1000,
-    label: 'NVIDIA API request',
+    maxAttempts: 2,
+    backoffMs: 15 * 1000,
+    label: provider.name,
   });
 
   return data.choices?.[0]?.message?.content || '';
+}
+
+async function callLLM(prompt) {
+  for (const provider of LLM_PROVIDERS) {
+    const apiKey = process.env[provider.envKey];
+    if (!apiKey) continue;
+
+    console.error(`Trying ${provider.name} (${provider.model})...`);
+    try {
+      const result = await callLLMProvider(provider, apiKey, prompt);
+      if (result) {
+        console.error(`${provider.name} succeeded.`);
+        return result;
+      }
+    } catch (err) {
+      console.error(`${provider.name} failed: ${formatError(err)}`);
+    }
+  }
+
+  throw new Error('All LLM providers failed');
 }
 
 // -- Step 4: Send email via Resend -------------------------------------------
@@ -130,11 +164,16 @@ async function sendEmail(digest, apiKey, toEmail) {
 // -- Main --------------------------------------------------------------------
 
 async function main() {
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
   const digestEmail = process.env.DIGEST_EMAIL;
 
-  if (!nvidiaKey) { console.error('NVIDIA_API_KEY not set'); process.exit(1); }
+  // Check that at least one LLM provider key is available
+  const hasLLM = LLM_PROVIDERS.some(p => process.env[p.envKey]);
+  if (!hasLLM) {
+    console.error('No LLM API key set. Need at least one of: ' +
+      LLM_PROVIDERS.map(p => p.envKey).join(', '));
+    process.exit(1);
+  }
 
   // Parse language from CLI args (default: zh)
   const args = process.argv.slice(2);
@@ -209,8 +248,7 @@ Generate the complete digest now. Rules:
 - Skip sections with no content.`;
 
   console.error(`Prompt size: ${llmPrompt.length} chars`);
-  console.error(`Calling ${NVIDIA_MODEL} via NVIDIA API...`);
-  const digest = await callLLM(llmPrompt, nvidiaKey);
+  const digest = await callLLM(llmPrompt);
 
   if (!digest) {
     console.error('LLM returned empty response');
