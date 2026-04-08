@@ -2,6 +2,11 @@
   "seenTweets": {},
   "seenVideos": {},
   "seenArticles": {
-    "https://claude.com/blog/harnessing-claudes-intelligence": 1775563232789
+    "https://claude.com/blog/harnessing-claudes-intelligence": 1775563232789,
+    "https://www.anthropic.com/engineering/infrastructure-noise": 1775634318957,
+    "https://www.anthropic.com/engineering/claude-code-auto-mode": 1775634320264,
+    "https://www.anthropic.com/engineering/harness-design-long-running-apps": 1775634320997,
+    "https://claude.com/blog/claude-builds-visuals": 1775634321773,
+    "https://claude.com/blog/how-enterprises-are-building-ai-agents-in-2026": 1775634322347
   }
 }
