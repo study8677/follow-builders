@@ -72,7 +72,7 @@ These are plain English instructions, not code. Changes take effect on the next 
 - [Training Data](https://www.youtube.com/playlist?list=PLOhHNjZItNnMm5tdW61JpnyxeYH5NDDx8)
 - [No Priors](https://www.youtube.com/@NoPriorsPodcast)
 - [Unsupervised Learning](https://www.youtube.com/@RedpointAI)
-- [Data Driven NYC](https://www.youtube.com/@DataDrivenNYC)
+- [The MAD Podcast with Matt Turck](https://www.youtube.com/@DataDrivenNYC)
 - [AI & I by Every](https://www.youtube.com/playlist?list=PLuMcoKK9mKgHtW_o9h5sGO2vXrffKHwJL)
 
 ### AI Builders on X (25)

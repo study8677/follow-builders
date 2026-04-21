@@ -65,7 +65,7 @@ Skill 使用纯文本 prompt 文件来控制内容的摘要方式。你可以通
 - [Training Data](https://www.youtube.com/playlist?list=PLOhHNjZItNnMm5tdW61JpnyxeYH5NDDx8)
 - [No Priors](https://www.youtube.com/@NoPriorsPodcast)
 - [Unsupervised Learning](https://www.youtube.com/@RedpointAI)
-- [Data Driven NYC](https://www.youtube.com/@DataDrivenNYC)
+- [The MAD Podcast with Matt Turck](https://www.youtube.com/@DataDrivenNYC)
 - [AI & I by Every](https://www.youtube.com/playlist?list=PLuMcoKK9mKgHtW_o9h5sGO2vXrffKHwJL)
 
 ### X 上的 AI 建造者（25位）
