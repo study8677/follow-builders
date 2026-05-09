@@ -10,7 +10,7 @@
 // URLs in state-feed.json so content is never repeated across runs.
 //
 // Usage: node generate-feed.js [--tweets-only | --podcasts-only | --blogs-only]
-// Env vars needed: X_BEARER_TOKEN, POD2TXT_API_KEY
+// Env vars: X_BEARER_TOKEN enables tweets; POD2TXT_API_KEY enables podcasts.
 // ============================================================================
 
 import { readFile, writeFile } from "fs/promises";
@@ -990,13 +990,18 @@ async function main() {
   const xBearerToken = process.env.X_BEARER_TOKEN;
   const pod2txtKey = process.env.POD2TXT_API_KEY;
 
+  const canRunPodcasts = runPodcasts && Boolean(pod2txtKey);
+  const canRunTweets = runTweets && Boolean(xBearerToken);
+
   if (runPodcasts && !pod2txtKey) {
-    console.error("POD2TXT_API_KEY not set");
-    process.exit(1);
+    console.error("POD2TXT_API_KEY not set; skipping podcast content");
   }
   if (runTweets && !xBearerToken) {
-    console.error("X_BEARER_TOKEN not set");
-    process.exit(1);
+    console.error("X_BEARER_TOKEN not set; skipping X/Twitter content");
+  }
+  if (!canRunTweets && !canRunPodcasts && !runBlogs) {
+    console.error("No runnable feed sources selected; nothing to update");
+    return;
   }
 
   const sources = await loadSources();
@@ -1004,7 +1009,7 @@ async function main() {
   const errors = [];
 
   // Fetch tweets
-  if (runTweets) {
+  if (canRunTweets) {
     console.error("Fetching X/Twitter content...");
     const xContent = await fetchXContent(
       sources.x_accounts,
@@ -1035,7 +1040,7 @@ async function main() {
   }
 
   // Fetch podcasts
-  if (runPodcasts) {
+  if (canRunPodcasts) {
     console.error("Fetching podcast content (RSS + pod2txt)...");
     const podcasts = await fetchPodcastContent(
       sources.podcasts,

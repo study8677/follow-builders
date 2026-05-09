@@ -35,15 +35,17 @@ jobs:
       - name: Generate digest
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_MODEL: ${{ vars.NVIDIA_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           DIGEST_EMAIL: ${{ secrets.DIGEST_EMAIL }}
+          ALLOW_DIGEST_SKIP: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
         run: |
-          LANG_FLAG="--language zh"
+          LANG_ARGS=(--language zh)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            LANG_FLAG="--language ${{ inputs.language }}"
+            LANG_ARGS=(--language "${{ inputs.language }}")
           fi
-          cd scripts && node daily-digest.js $LANG_FLAG
+          cd scripts && node daily-digest.js "${LANG_ARGS[@]}"
 
       - name: Create GitHub Issue from digest
         if: hashFiles('digest-output.md') != ''

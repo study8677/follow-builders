@@ -3,13 +3,16 @@
 // ============================================================================
 // Follow Builders — Daily Digest (GitHub Actions)
 // ============================================================================
-// Fully automated pipeline: fetch feeds → LLM remix → Resend email.
+// Fully automated pipeline: fetch feeds -> LLM remix -> Resend email.
 // Runs on GitHub Actions daily.
 //
-// Required env vars:
-//   NVIDIA_API_KEY  — NVIDIA API key (for Kimi K2.5 via NVIDIA Inference)
-//   RESEND_API_KEY  — Resend API key (free tier: 100 emails/day)
-//   DIGEST_EMAIL    — Recipient email address
+// Optional env vars:
+//   GEMINI_API_KEY    - Gemini API key
+//   NVIDIA_API_KEY    - NVIDIA API key
+//   NVIDIA_MODEL      - NVIDIA model override
+//   RESEND_API_KEY    - Resend API key (free tier: 100 emails/day)
+//   DIGEST_EMAIL      - Recipient email address
+//   ALLOW_DIGEST_SKIP - exit 0 instead of failing when LLM config/providers fail
 //
 // Usage: node daily-digest.js [--language en|zh|bilingual]
 // ============================================================================
@@ -32,6 +35,8 @@ const FEED_URLS = {
 
 // -- LLM providers -----------------------------------------------------------
 
+const DEFAULT_NVIDIA_MODEL = 'moonshotai/kimi-k2-thinking';
+
 const LLM_PROVIDERS = [
   {
     name: 'Gemini',
@@ -42,14 +47,18 @@ const LLM_PROVIDERS = [
     backoffMs: 60_000,
   },
   {
-    name: 'NVIDIA (Kimi K2.5)',
+    name: 'NVIDIA',
     envKey: 'NVIDIA_API_KEY',
     url: 'https://integrate.api.nvidia.com/v1/chat/completions',
-    model: 'moonshotai/kimi-k2.5',
+    model: process.env.NVIDIA_MODEL || DEFAULT_NVIDIA_MODEL,
     maxAttempts: 2,
     backoffMs: 30_000,
   },
 ];
+
+function allowDigestSkip() {
+  return process.env.ALLOW_DIGEST_SKIP === 'true';
+}
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -116,6 +125,8 @@ async function callLLMProvider(provider, apiKey, prompt) {
 }
 
 async function callLLM(prompt) {
+  const failures = [];
+
   for (const provider of LLM_PROVIDERS) {
     const apiKey = process.env[provider.envKey];
     if (!apiKey) continue;
@@ -128,11 +139,14 @@ async function callLLM(prompt) {
         return result;
       }
     } catch (err) {
-      console.error(`${provider.name} failed: ${formatError(err)}`);
+      const details = formatError(err);
+      failures.push(`${provider.name}: ${details}`);
+      console.error(`${provider.name} failed: ${details}`);
     }
   }
 
-  throw new Error('All LLM providers failed');
+  const suffix = failures.length > 0 ? `: ${failures.join(' | ')}` : '';
+  throw new Error(`All LLM providers failed${suffix}`);
 }
 
 // -- Step 4: Send email via Resend -------------------------------------------
@@ -172,8 +186,13 @@ async function main() {
   // Check that at least one LLM provider key is available
   const hasLLM = LLM_PROVIDERS.some(p => process.env[p.envKey]);
   if (!hasLLM) {
-    console.error('No LLM API key set. Need at least one of: ' +
-      LLM_PROVIDERS.map(p => p.envKey).join(', '));
+    const message = 'No LLM API key set. Need at least one of: ' +
+      LLM_PROVIDERS.map(p => p.envKey).join(', ');
+    if (allowDigestSkip()) {
+      console.error(`${message}; skipping digest.`);
+      return;
+    }
+    console.error(message);
     process.exit(1);
   }
 
@@ -250,7 +269,16 @@ Generate the complete digest now. Rules:
 - Skip sections with no content.`;
 
   console.error(`Prompt size: ${llmPrompt.length} chars`);
-  const digest = await callLLM(llmPrompt);
+  let digest;
+  try {
+    digest = await callLLM(llmPrompt);
+  } catch (err) {
+    if (allowDigestSkip()) {
+      console.error(`LLM unavailable: ${formatError(err)}. Skipping digest without failing scheduled workflow.`);
+      return;
+    }
+    throw err;
+  }
 
   if (!digest) {
     console.error('LLM returned empty response');
