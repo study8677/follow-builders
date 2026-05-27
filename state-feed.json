@@ -4,6 +4,9 @@
   "seenArticles": {
     "https://www.anthropic.com/engineering/april-23-postmortem": 1779790760740,
     "https://claude.com/blog/new-in-claude-managed-agents": 1779790761474,
-    "https://claude.com/blog/connectors-for-everyday-life": 1779790762041
+    "https://claude.com/blog/connectors-for-everyday-life": 1779790762041,
+    "https://www.anthropic.com/engineering/how-we-contain-claude": 1779877851041,
+    "https://www.anthropic.com/engineering/managed-agents": 1779877852900,
+    "https://claude.com/blog/claude-managed-agents-updates": 1779877853539
   }
 }
