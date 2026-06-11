@@ -2,12 +2,6 @@
   "seenTweets": {},
   "seenVideos": {},
   "seenArticles": {
-    "https://www.anthropic.com/engineering/april-23-postmortem": 1780485818668,
-    "https://claude.com/blog/new-in-claude-managed-agents": 1780485819342,
-    "https://claude.com/blog/connectors-for-everyday-life": 1780485819909,
-    "https://www.anthropic.com/engineering/how-we-contain-claude": 1780567967296,
-    "https://www.anthropic.com/engineering/managed-agents": 1780567969235,
-    "https://claude.com/blog/claude-managed-agents-updates": 1780567969937,
     "https://claude.com/blog/claude-for-foundation-models": 1780999421035
   }
 }
