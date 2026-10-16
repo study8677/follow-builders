@@ -2,8 +2,6 @@
   "seenTweets": {},
   "seenVideos": {},
   "seenArticles": {
-    "https://www.anthropic.com/engineering/how-we-contain-claude": 1791466375662,
-    "https://www.anthropic.com/engineering/april-23-postmortem": 1791466376670,
     "https://www.anthropic.com/engineering/managed-agents": 1791723202582,
     "https://www.anthropic.com/engineering/redesigning-source-control": 1791978955254
   }
